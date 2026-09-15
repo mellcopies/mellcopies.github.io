@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; script-src 'self' 'sha256-krjAGxRbKrOEjK09pnJQkE5ZQFEuUgMeOZ/g4RF2DXo=' 'sha256-wDk9YzzlQFW2zvg1XAw91FVg19PU/5t3IH37dlZlrq0='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://dusiplnbtzshbqebyujt.supabase.co; media-src 'self' blob: https://dusiplnbtzshbqebyujt.supabase.co; connect-src 'self' https://dusiplnbtzshbqebyujt.supabase.co; font-src 'self' data:; manifest-src 'self'; worker-src 'self'" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#14161a" />
+    <meta name="description" content="mell copies — копии ролика из футажей: загрузите ролик, выберите футажи, получите копии." />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="mell copies" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <title>mell copies</title>
+    <script>
+      // Диагностика запуска (ES5, самый первый скрипт): пока #app пуст, любая ошибка, отказ промиса или незагрузившийся
+      // файл выводится на экран по-русски И отправляется владельцу на прокси (POST /app/issue, без device-token) с коротким
+      // ID; кнопка «Скопировать» кладёт полный текст в буфер — скриншот не нужен. Таймер «не отрисовано» считает 4 с
+      // от события load модуля клиента (а не от старта страницы): медленная сеть не даёт ложного срабатывания; если модуль
+      // не загрузился за 30 с — отдельное сообщение. Этап запуска пишет main.tsx в window.__mellStep (boot → store → render).
+      // Причина: в Android WebView без DevTools пустой экран иначе нем (13.09.2026 — «Preferences.then() is not implemented»).
+      // После первого рендера обработчики ничего не делают — ошибки приложения обрабатывает сам клиент (main.tsx).
+      // Константы подставляет vite.config.ts (htmlConsts); в исходнике остаются плейсхолдеры.
+      (function () {
+        var API_ENV = '', API_DEV = '', API_PROD = 'https://dusiplnbtzshbqebyujt.supabase.co/functions/v1/mell-proxy';
+        var DEV = 'false' === 'true', VERSION = '0.1.4';
+        var T0 = Date.now(), SHOWN = false, PENDING = null, LOADED_AT = 0;
+        function root() { return document.getElementById('app'); }
+        function isEmpty(el) { return !!el && el.childNodes.length === 0; }
+        function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'; }); }
+        function ua() { return (typeof navigator !== 'undefined' && navigator.userAgent) || '—'; }
+        function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+        function origin(u) { var m = /^(https?:\/\/[^\/?#]+)/.exec(u || ''); return m ? m[1] : ''; }
+        // переопределение mell.api — как в api/client.ts (security F001): только https на origin прод-адреса/VITE_MELL_API, в dev — http://localhost
+        function allowedApi(o) {
+          if (!o) return false;
+          var env = API_ENV.indexOf('__MELL') === 0 ? '' : API_ENV, oo = origin(o);
+          if (/^https:/.test(o) && oo && (oo === origin(API_PROD) || oo === origin(env))) return true;
+          return DEV && /^http:\/\/(localhost|127\.0\.0\.1)([:\/]|$)/.test(o);
+        }
+        function api() { var o = lsGet('mell.api'); var a = (allowedApi(o) ? o : '') || (API_ENV.indexOf('__MELL') === 0 ? '' : API_ENV) || (DEV ? API_DEV : API_PROD); return a.replace(/\/+$/, ''); }
+        function platform() {
+          try { if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) return 'android'; } catch (e) {}
+          return /Windows/i.test(ua()) ? 'windows' : 'web';
+        }
+        function step() { return window.__mellStep || (LOADED_AT ? 'module-loaded' : 'html'); }
+        function makeRef() {
+          try { var b = new Uint8Array(4); crypto.getRandomValues(b); var s = ''; for (var i = 0; i < 4; i++) s += ('0' + b[i].toString(16)).slice(-2); return s; } catch (e) { return Math.random().toString(16).slice(2, 10); }
+        }
+        function setStatus(text) { var el = document.getElementById('mell-boot-status'); if (el) el.textContent = text; }
+        function copyText(text) {
+          function legacy() { try { var ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); var ok = document.execCommand('copy'); document.body.removeChild(ta); return ok; } catch (e) { return false; } }
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(function () { setStatus('Скопировано — отправьте текст владельцу.'); }, function () { setStatus(legacy() ? 'Скопировано — отправьте текст владельцу.' : 'Не удалось скопировать — сделайте скриншот.'); }); return; }
+          } catch (e) {}
+          setStatus(legacy() ? 'Скопировано — отправьте текст владельцу.' : 'Не удалось скопировать — сделайте скриншот.');
+        }
+        function report(payload) {
+          try {
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', api() + '/app/issue', true);
+            xhr.timeout = 15000;
+            xhr.setRequestHeader('content-type', 'application/json');
+            xhr.setRequestHeader('x-mell-app', platform() + '/' + VERSION);
+            xhr.onreadystatechange = function () {
+              if (xhr.readyState !== 4) return;
+              setStatus(xhr.status === 200 ? 'Отчёт отправлен владельцу. ID: ' + payload.ref : 'Отчёт не отправлен (' + (xhr.status || 'нет сети') + ') — нажмите «Скопировать» и отправьте текст владельцу. ID: ' + payload.ref);
+            };
+            xhr.ontimeout = function () { setStatus('Отчёт не отправлен (нет ответа) — нажмите «Скопировать» и отправьте текст владельцу. ID: ' + payload.ref); };
+            xhr.send(JSON.stringify(payload));
+          } catch (e) { setStatus('Отчёт не отправлен — нажмите «Скопировать» и отправьте текст владельцу. ID: ' + payload.ref); }
+        }
+        function show(title, detail, stack, kind) {
+          var el = root();
+          if (SHOWN) return;
+          if (!el) { // ошибка раньше, чем распарсен <body> (classic-скрипт в <head>, например native-shim.js) — покажем после парсинга
+            if (!PENDING) { PENDING = [title, detail, stack, kind]; document.addEventListener('DOMContentLoaded', function () { var p = PENDING; PENDING = null; if (p) show(p[0], p[1], p[2], p[3]); }); }
+            return;
+          }
+          if (!isEmpty(el)) return;
+          SHOWN = true;
+          var ref = makeRef();
+          var st = step();
+          var full = title + '\n' + (detail || '') + '\n' + String(stack || '').slice(0, 1500) + '\nэтап: ' + st + ' · версия: ' + VERSION + ' · ' + platform() + ' · ' + Math.round((Date.now() - T0) / 100) / 10 + ' с' + '\nWebView: ' + ua() + '\nID: ' + ref;
+          el.innerHTML = '<div role="alert" style="font:16px/1.45 system-ui,-apple-system,Roboto,sans-serif;padding:28px 18px;color:#e6e8ec;background:#14161a;min-height:100vh;box-sizing:border-box;word-break:break-word">'
+            + '<div style="font-size:22px;font-weight:700;margin:0 0 12px">' + esc(title) + '</div>'
+            + (detail ? '<div style="margin:0 0 12px">' + esc(detail) + '</div>' : '')
+            + (stack ? '<pre style="white-space:pre-wrap;font:12px/1.4 monospace;color:#9aa3b2;margin:0 0 12px">' + esc(String(stack).slice(0, 300)) + '</pre>' : '')
+            + '<div style="font-size:12px;color:#9aa3b2">Этап: ' + esc(st) + ' · версия ' + esc(VERSION) + ' · ' + esc(platform()) + '</div>'
+            + '<div style="font-size:12px;color:#9aa3b2;margin-top:4px">WebView: ' + esc(ua()) + '</div>'
+            + '<div style="display:flex;gap:12px;align-items:center;margin-top:16px;flex-wrap:wrap">'
+            + '<button type="button" id="mell-boot-copy" style="font:600 15px system-ui,-apple-system,Roboto,sans-serif;padding:12px 18px;border-radius:12px;border:0;background:#4f8cff;color:#fff;min-height:44px">Скопировать</button>'
+            + '<span style="font:600 15px monospace;color:#e6e8ec">ID: ' + esc(ref) + '</span></div>'
+            + '<div id="mell-boot-status" style="font-size:13px;color:#9aa3b2;margin-top:12px">Отправляем отчёт владельцу…</div>'
+            + '<div style="font-size:12px;color:#9aa3b2;margin-top:8px">Сообщите владельцу ID (или нажмите «Скопировать» и отправьте текст). Если WebView старый — обновите «Android System WebView» и Chrome в Play Маркете.</div>'
+            + '</div>';
+          var btn = document.getElementById('mell-boot-copy');
+          if (btn) btn.addEventListener('click', function () { copyText(full); });
+          report({ ref: ref, kind: kind || 'boot_error', title: String(title).slice(0, 300), detail: String(detail || '').slice(0, 1000), stack: String(stack || '').slice(0, 2000), step: st, ua: ua(), app_version: VERSION, platform: platform(), install_id: lsGet('mell.install_id'), url: String(location.href).split('?')[0].slice(0, 300), t_ms: Date.now() - T0 });
+        }
+        window.addEventListener('error', function (e) {
+          var t = e && e.target;
+          if (t && t !== window && t.tagName) { // ошибка загрузки ресурса (capture): script/link/img
+            var src = t.src || t.href || '';
+            show('Ошибка запуска: не загрузился файл', (t.tagName || '').toLowerCase() + (src ? ' ' + src : ''), '', 'boot_asset');
+            return;
+          }
+          var err = e && e.error;
+          var msg = (e && e.message) || (err && err.message) || 'неизвестная ошибка';
+          var where = e && e.filename ? e.filename + ':' + e.lineno + ':' + e.colno : '';
+          show('Ошибка запуска: ' + msg, where, err && err.stack, 'boot_error');
+        }, true);
+        window.addEventListener('unhandledrejection', function (e) {
+          var r = e && e.reason;
+          var msg = r && r.message ? r.message : String(r);
+          show('Ошибка запуска: ' + msg, '', r && r.stack, 'boot_reject');
+        });
+        // load модуля клиента (capture: события load элементов не всплывают) — от него считаем 4 с «не отрисовано»
+        window.addEventListener('load', function (e) {
+          var t = e && e.target;
+          if (t && t.tagName === 'SCRIPT' && t.type === 'module' && !LOADED_AT) LOADED_AT = Date.now();
+        }, true);
+        function tick() {
+          if (SHOWN || !isEmpty(root())) return;
+          var now = Date.now();
+          if (LOADED_AT) {
+            if (now - LOADED_AT >= 4000) { show('Приложение не запустилось', 'скрипт загружен, но экран не отрисован за 4 с (этап: ' + step() + ', ошибок не зафиксировано).', '', 'boot_timeout'); return; }
+          } else if (now - T0 >= 30000) { show('Приложение не запустилось', 'скрипт приложения не загрузился за 30 с (медленная сеть или файл недоступен).', '', 'boot_timeout'); return; }
+          setTimeout(tick, 500);
+        }
+        setTimeout(tick, 4000);
+      })();
+    </script>
+    <script>
+      // Тема до первого рендера — чтобы не мигал светлый фон.
+      try {
+        var t = localStorage.getItem('mell.theme');
+        if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    </script>
+    <script type="module" crossorigin src="./assets/index-CUcDGYd3.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/style-DA4U_P7E.css">
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
+</html>
